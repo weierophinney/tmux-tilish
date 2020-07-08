@@ -11,10 +11,6 @@
 # minor adaptation to fit better with `vim` and `tmux`. See also the README.
 
 # Check input parameters {{{
-	# Estimate the version. This basically checks if `tmux select-layout -E` is
-	# supported (v2.7+); if not, the plugin goes into legacy compatibility mode.
-	legacy="$(tmux select-layout -E 2>/dev/null || echo on)"
-	
 	# Read user options.
 	for opt in default dmenu easymode navigate navigator prefix shiftnum
 	do
@@ -59,21 +55,12 @@ bind_switch () {
 
 bind_move () {
 	# Bind keys to move panes between workspaces.
-	if [ -z "$legacy" ]
-	then
-		tmux $bind "$1" \
-			if-shell "tmux join-pane -t :$2" \
-				"" \
-				"new-window -dt :$2; join-pane -t :$2; select-pane -t top-left; kill-pane" \\\;\
-			select-layout \\\;\
-			select-layout -E
-	else
-		tmux $bind "$1" \
-			if-shell "tmux new-window -dt :$2" \
-				"join-pane -t :$2; select-pane -t top-left; kill-pane" \
-				"send escape; join-pane -t :$2" \\\;\
-			select-layout
-	fi
+    tmux $bind "$1" \
+        if-shell "tmux join-pane -t :$2" \
+            "" \
+            "new-window -dt :$2; join-pane -t :$2; select-pane -t top-left; kill-pane" \\\;\
+        select-layout \\\;\
+        select-layout -E
 }
 
 bind_layout () {
@@ -85,16 +72,9 @@ bind_layout () {
 			resize-pane -Z
 	else
 		# Actually switch layout.
-		if [ -z "$legacy" ]
-		then
-			tmux $bind "$1" \
-				select-layout "$2" \\\;\
-				select-layout -E
-		else
-			tmux $bind "$1" \
-				run-shell "tmux select-layout \"$2\"" \\\;\
-				send escape
-		fi
+        tmux $bind "$1" \
+            select-layout "$2" \\\;\
+            select-layout -E
 	fi
 }
 # }}}
@@ -150,12 +130,7 @@ bind_layout "${mod}f" 'fullscreen'
 bind_layout "${mod}t" 'tiled'
 
 # Refresh the current layout (e.g. after deleting a pane).
-if [ -z "$legacy" ]
-then
-	tmux $bind "${mod}r" select-layout -E
-else
-	tmux $bind "${mod}r" run-shell 'tmux select-layout'\\\; send escape
-fi
+tmux $bind "${mod}r" select-layout -E
 
 # Switch to pane via Alt + hjkl.
 tmux $bind "${mod}${h}" select-pane -L
@@ -164,48 +139,25 @@ tmux $bind "${mod}${k}" select-pane -U
 tmux $bind "${mod}${l}" select-pane -R
 
 # Move a pane via Alt + Shift + hjkl.
-if [ -z "$legacy" ]
-then
-	tmux $bind "${mod}${H}" swap-pane -s '{left-of}'
-	tmux $bind "${mod}${J}" swap-pane -s '{down-of}'
-	tmux $bind "${mod}${K}" swap-pane -s '{up-of}'
-	tmux $bind "${mod}${L}" swap-pane -s '{right-of}'
-else
-	tmux $bind "${mod}${H}" run-shell 'old=`tmux display -p "#{pane_index}"`; tmux select-pane -L; tmux swap-pane -t $old'
-	tmux $bind "${mod}${J}" run-shell 'old=`tmux display -p "#{pane_index}"`; tmux select-pane -D; tmux swap-pane -t $old'
-	tmux $bind "${mod}${K}" run-shell 'old=`tmux display -p "#{pane_index}"`; tmux select-pane -U; tmux swap-pane -t $old'
-	tmux $bind "${mod}${L}" run-shell 'old=`tmux display -p "#{pane_index}"`; tmux select-pane -R; tmux swap-pane -t $old'
-fi
+tmux $bind "${mod}${H}" swap-pane -s '{left-of}'
+tmux $bind "${mod}${J}" swap-pane -s '{down-of}'
+tmux $bind "${mod}${K}" swap-pane -s '{up-of}'
+tmux $bind "${mod}${L}" swap-pane -s '{right-of}'
 
 # Open a terminal with Alt + Enter.
-if [ -z "$legacy" ]
-then
-	tmux $bind "${mod}enter" \
-		run-shell 'cwd="`tmux display -p \"#{pane_current_path}\"`"; tmux select-pane -t "bottom-right"; tmux split-pane -c "$cwd"'
-else
-	tmux $bind "${mod}enter" \
-		select-pane -t 'bottom-right' \\\;\
-		split-window \\\;\
-		run-shell 'tmux select-layout' \\\;\
-		send escape
-fi
+tmux $bind "${mod}enter" \
+    run-shell 'cwd="`tmux display -p \"#{pane_current_path}\"`"; tmux select-pane -t "bottom-right"; tmux split-pane -c "$cwd"'
 
 # Name a window with Alt + n.
 tmux $bind "${mod}n" \
 	command-prompt -p 'Workspace name:' 'rename-window %%'
 
 # Close a window with Alt + Shift + q.
-if [ -z "$legacy" ]
-then
-	tmux $bind "${mod}Q" \
-		if-shell \
-			'[ "$(tmux display-message -p "#{window_panes}")" -gt 1 ]' \
-			'kill-pane; select-layout; select-layout -E' \
-			'kill-pane'
-else
-	tmux $bind "${mod}Q" \
-		kill-pane
-fi
+tmux $bind "${mod}Q" \
+    if-shell \
+        '[ "$(tmux display-message -p "#{window_panes}")" -gt 1 ]' \
+        'kill-pane; select-layout; select-layout -E' \
+        'kill-pane'
 
 # Close a connection with Alt + Shift + e.
 tmux $bind "${mod}E" \
@@ -218,19 +170,16 @@ tmux $bind "${mod}C" \
 # }}}
 
 # Define hooks {{{
-if [ -z "$legacy" ]
+# Autorefresh layout after deleting a pane.
+tmux set-hook -g after-split-window "select-layout; select-layout -E"
+tmux set-hook -g pane-exited "select-layout; select-layout -E"
+
+# Autoselect layout after creating new window.
+if [ -n "$default" ]
 then
-	# Autorefresh layout after deleting a pane.
-	tmux set-hook -g after-split-window "select-layout; select-layout -E"
-	tmux set-hook -g pane-exited "select-layout; select-layout -E"
-	
-	# Autoselect layout after creating new window.
-	if [ -n "$default" ]
-	then
-		tmux set-hook -g window-linked "select-layout \"$default\"; select-layout -E"
-		tmux select-layout "$default"
-		tmux select-layout -E
-	fi
+    tmux set-hook -g window-linked "select-layout \"$default\"; select-layout -E"
+    tmux select-layout "$default"
+    tmux select-layout -E
 fi
 # }}}
 
@@ -264,19 +213,16 @@ fi
 # }}}
 
 # Integrate with `fzf` to approximate `dmenu` {{{
-if [ -z "$legacy" ] && [ "$dmenu" = "on" ]
+if [ -n "$(command -v fzf)" ]
 then
-	if [ -n "$(command -v fzf)" ]
-	then
-		# The environment variables of your `default-shell` are used when running `fzf`.
-		# This solution is about an order of magnitude faster than invoking `compgen`.
-		# Based on: https://medium.com/njiuko/using-fzf-instead-of-dmenu-2780d184753f
-		tmux $bind "${mod}d" \
-			select-pane -t '{bottom-right}' \\\;\
-			split-pane 'sh -c "exec \$(echo \"\$PATH\" | tr \":\" \"\n\" | xargs -I{} -- find {} -maxdepth 1 -mindepth 1 -executable 2>/dev/null | sort -u | fzf)"'
-	else
-		tmux $bind "${mod}d" \
-			display 'To enable this function, install `fzf` and restart `tmux`.'
-	fi
+    # The environment variables of your `default-shell` are used when running `fzf`.
+    # This solution is about an order of magnitude faster than invoking `compgen`.
+    # Based on: https://medium.com/njiuko/using-fzf-instead-of-dmenu-2780d184753f
+    tmux $bind "${mod}d" \
+        select-pane -t '{bottom-right}' \\\;\
+        split-pane 'sh -c "exec \$(echo \"\$PATH\" | tr \":\" \"\n\" | xargs -I{} -- find {} -maxdepth 1 -mindepth 1 -executable 2>/dev/null | sort -u | fzf)"'
+else
+    tmux $bind "${mod}d" \
+        display 'To enable this function, install `fzf` and restart `tmux`.'
 fi
 # }}}
